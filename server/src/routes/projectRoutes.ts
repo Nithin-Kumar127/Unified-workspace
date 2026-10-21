@@ -38,7 +38,7 @@ router.get('/:id/messages', async (req: AuthRequest, res: Response) => {
       [id]
     );
 
-    const formattedMessages = result.rows.map(row => ({
+    const formattedMessages = result.rows.map((row: any) => ({
       id: row.id,
       projectId: row.project_id,
       userId: row.user_id,
