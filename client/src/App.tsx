@@ -1,61 +1,76 @@
-// client/src/App.tsx
-import { Routes, Route, Link } from 'react-router-dom'
-import { useContext } from 'react'
-import { AuthContext } from './context/AuthContext'
-import Register from './pages/Register'
-import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import Workspace from './pages/Workspace'
+import React, { useContext } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { AuthContext } from './context/AuthContext';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import Workspace from './pages/Workspace';
+import Navbar from './components/Navbar';
 
-function App() {
+// Layout for standard pages (includes the Navbar)
+const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
+  return (
+    <div className="flex flex-col h-screen bg-[#0E0E11]">
+      <Navbar />
+      <main className="flex-1 overflow-y-auto">{children}</main>
+    </div>
+  );
+};
+
+// Security wrapper (ensures user is logged in)
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const auth = useContext(AuthContext);
+  if (auth?.isLoading) return null;
+  if (!auth?.user) return <Navigate to="/login" />;
+  return <>{children}</>;
+};
+
+export default function App() {
   const auth = useContext(AuthContext);
 
   return (
-    // 1. Make the whole app a strict full-screen flex container
-    <div className="h-screen flex flex-col bg-gray-900 font-sans">
+    <Routes>
+      {/* Public Auth Routes */}
+      <Route
+        path="/auth/callback"
+        element={
+          auth?.isLoading ? (
+            <div className="flex min-h-screen items-center justify-center bg-[#0E0E11] text-zinc-300">
+              Completing sign-in…
+            </div>
+          ) : (
+            <Navigate to={auth?.user ? "/dashboard" : "/login"} replace />
+          )
+        }
+      />
+      <Route path="/login" element={auth?.user ? <Navigate to="/dashboard" /> : <Login />} />
+      <Route path="/register" element={auth?.user ? <Navigate to="/dashboard" /> : <Register />} />
+
+      {/* Dashboard Route (Includes standard Navbar layout) */}
+      <Route path="/dashboard" element={
+        <ProtectedRoute>
+          <DashboardLayout>
+            <Dashboard />
+          </DashboardLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Workspace IDE Route (Full Screen, No Navbar) */}
+      <Route path="/workspace/:id" element={
+        <ProtectedRoute>
+          <Workspace />
+        </ProtectedRoute>
+      } />
       
-      {/* Navbar (Fixed height, won't shrink) */}
-      <nav className="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center shrink-0">
-        <div className="flex gap-4 items-center max-w-7xl mx-auto w-full px-4">
-          <Link to="/" className="text-xl font-bold text-white tracking-wide">Unified Workspace</Link>
-          
-          <div className="ml-auto flex gap-4 items-center text-sm">
-            {auth?.user ? (
-              <>
-                <Link to="/dashboard" className="text-gray-300 hover:text-white transition-colors">Dashboard</Link>
-                <div className="h-4 w-px bg-gray-600"></div> {/* Divider */}
-                <span className="text-gray-400">{auth.user.name}</span>
-                <button 
-                  onClick={auth.logout} 
-                  className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white border border-red-500/20 px-3 py-1.5 rounded transition-all"
-                >
-                  Logout
-                </button>
-              </>
-            ) : (
-              <>
-                <Link to="/login" className="text-gray-300 hover:text-white transition-colors">Login</Link>
-                <Link to="/register" className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded transition-colors">
-                  Register
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </nav>
-
-      {/* 2. Main content area takes exactly the remaining height */}
-      <main className="flex-1 overflow-hidden">
-        <Routes>
-          <Route path="/" element={<div className="p-8 text-white text-center">Home Page</div>} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/project/:id" element={<Workspace />} />
-        </Routes>
-      </main>
-    </div>
-  )
+      {/* Fallback alias in case your Dashboard links to /project/:id instead */}
+      <Route path="/project/:id" element={
+        <ProtectedRoute>
+          <Workspace />
+        </ProtectedRoute>
+      } />
+      
+      {/* Default Catch-All Redirect */}
+      <Route path="*" element={<Navigate to={auth?.user ? "/dashboard" : "/login"} />} />
+    </Routes>
+  );
 }
-
-export default App

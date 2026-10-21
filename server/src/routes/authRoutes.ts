@@ -1,6 +1,6 @@
 // server/src/routes/authRoutes.ts
 import { Router } from 'express';
-import { register, login } from '../controllers/authController.js';
+import { register, login, googleLogin } from '../controllers/authController.js';
 
 const router = Router();
 
@@ -9,5 +9,8 @@ router.post('/register', register);
 
 // POST /api/auth/login
 router.post('/login', login);
+
+// POST /api/auth/google
+router.post('/google', googleLogin);
 
 export default router;

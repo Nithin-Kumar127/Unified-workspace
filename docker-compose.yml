@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: unified-workspace-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: postgres
+      # Accept password auth from ALL hosts (covers Docker bridge IPv4 + IPv6)
+      POSTGRES_HOST_AUTH_METHOD: md5
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - workspace_network
+
+  nginx:
+    image: nginx:latest
+    container_name: unified-workspace-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - workspace_network
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: unified-workspace-backend
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - PORT=5000
+      - NODE_ENV=${NODE_ENV:-production}
+      - TRUST_PROXY_HOPS=1
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}
+      - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASS=${EMAIL_PASS}
+      - FRONTEND_URL=${FRONTEND_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - workspace_network
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+        VITE_SUPABASE_URL: ${SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+    container_name: unified-workspace-frontend
+    environment:
+      - VITE_API_URL=/api
+    networks:
+      - workspace_network
+
+volumes:
+  pgdata:
+
+networks:
+  workspace_network:
+    driver: bridge
