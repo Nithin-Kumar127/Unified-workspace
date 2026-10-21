@@ -388,15 +388,19 @@ export default function Workspace() {
 
   useEffect(() => {
     if (!id || !auth?.user) return;
+    console.info("[Socket.IO] Connecting to:", socketServerUrl);
     const newSocket = io(socketServerUrl, {
       transports: ['websocket', 'polling'],
       withCredentials: true,
     });
     setSocket(newSocket);
 
-    newSocket.on("connect", () => { newSocket.emit("join_project", id); });
+    newSocket.on("connect", () => {
+      console.info("[Socket.IO] Connected:", newSocket.id);
+      newSocket.emit("join_project", id);
+    });
     newSocket.on("connect_error", (error) => {
-      console.error("Socket connection failed:", error.message);
+      console.error("[Socket.IO] connect_error:", error.message);
     });
     newSocket.on("disconnect", () => { teardownVoice(); });
     newSocket.on("receive_message", (m) => { setMessages(prev => (m.id !== undefined && prev.some(x => x.id === m.id)) ? prev : [...prev, m]); setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100); });
