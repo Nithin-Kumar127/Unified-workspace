@@ -2,11 +2,13 @@
 import {type Request,type Response,type NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
+
+
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
 // Extend the Express Request type to include our user payload
 export interface AuthRequest extends Request {
-  user?: { id: number };
+  user?: any;
 }
 
 export const protect = (req: AuthRequest, res: Response, next: NextFunction): void => {

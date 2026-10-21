@@ -250,7 +250,7 @@ export const getProjectMessages = async (req: AuthRequest, res: Response): Promi
     `, [projectId, userId]);
 
     // Parse attachment from JSON string back to object (stored via JSON.stringify on write)
-    const formattedMessages = messages.rows.map(row => ({
+    const formattedMessages = messages.rows.map((row: any) => ({
       ...row,
       attachment: row.attachment
         ? (typeof row.attachment === 'string' ? JSON.parse(row.attachment) : row.attachment)

@@ -26,7 +26,7 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
-pool.on('error', (err) => {
+pool.on('error', (err: any) => {
   console.error('Unexpected database error:', err);
 });
 
