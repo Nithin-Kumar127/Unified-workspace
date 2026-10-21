@@ -3,16 +3,13 @@ import dns from 'node:dns';
 import pkg from 'pg';
 import dotenv from 'dotenv';
 
-// Force IPv4 DNS lookups first to avoid Docker IPv6 network lookup delays
 dns.setDefaultResultOrder('ipv4first');
-
 dotenv.config();
 
 const { Pool } = pkg;
-
 const dbUrl = process.env.DATABASE_URL || '';
 
-// Dynamically check if the connection is pointing to local Docker / localhost
+// Detect local environment versus production cloud deployment
 const isLocalDb = 
   dbUrl.includes('@postgres:') || 
   dbUrl.includes('localhost') || 
@@ -20,9 +17,10 @@ const isLocalDb =
 
 const pool = new Pool({
   connectionString: dbUrl,
-  // Local Docker PostgreSQL does not support SSL; Supabase Cloud requires it.
-  ssl: isLocalDb ? false : { rejectUnauthorized: false },
-  // PgBouncer pooler mode configuration
+  // Disable SSL for local Docker Postgres; set rejectUnauthorized to false for Supabase Cloud
+  ssl: isLocalDb 
+    ? false 
+    : { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
