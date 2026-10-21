@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useContext } from "react";
 import { isAxiosError } from "axios";
 import { useParams, useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
-import api from "../services/api";
+import api, { socketServerUrl } from "../services/api";
 import { AuthContext } from "../context/AuthContext";
 import CodeEditor from "../components/CodeEditor";
 import LatencyMonitor from "../components/LatencyMonitor";
@@ -210,6 +210,7 @@ export default function Workspace() {
   const [project, setProject] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
   const [activeFile, setActiveFile] = useState<any>(null);
+  const activeFileRef = useRef<any>(null);
   const [code, setCode] = useState<string>("");
   const [newFileName, setNewFileName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -387,13 +388,27 @@ export default function Workspace() {
 
   useEffect(() => {
     if (!id || !auth?.user) return;
-    const newSocket = io(window.location.origin);
+    const newSocket = io(socketServerUrl, {
+      transports: ['websocket', 'polling'],
+      withCredentials: true,
+    });
     setSocket(newSocket);
 
     newSocket.on("connect", () => { newSocket.emit("join_project", id); });
+    newSocket.on("connect_error", (error) => {
+      console.error("Socket connection failed:", error.message);
+    });
     newSocket.on("disconnect", () => { teardownVoice(); });
     newSocket.on("receive_message", (m) => { setMessages(prev => (m.id !== undefined && prev.some(x => x.id === m.id)) ? prev : [...prev, m]); setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100); });
     newSocket.on("message_deleted", (data) => { if (data.deleteType === 'for_everyone') setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, is_deleted: true, content: '' } : m)); });
+    newSocket.on("file_updated", (updatedFile) => {
+      setFiles((prev) => prev.map((file) => file.id === updatedFile.id ? updatedFile : file));
+      if (activeFileRef.current?.id === updatedFile.id) {
+        activeFileRef.current = updatedFile;
+        setActiveFile(updatedFile);
+        setCode(updatedFile.content ?? "");
+      }
+    });
     newSocket.on("receive_new_milestone", (m) => setMilestones(prev => prev.some(x => x.id === m.id) ? prev : [...prev, m]));
     newSocket.on("receive_updated_milestone", (um) => setMilestones(prev => prev.map(m => m.id === um.id ? um : m)));
 
@@ -557,6 +572,7 @@ export default function Workspace() {
   };
 
   const selectFile = async (file: any) => {
+    activeFileRef.current = file;
     setActiveFile(file); setCode("// Loading file content...");
     try { const res = await api.get(`/projects/${id}/files/${file.id}`); setCode(res.data.content || ""); }
     catch (err: any) { setCode(`// Error loading file: ${err.message}`); }
@@ -566,15 +582,25 @@ export default function Workspace() {
     e.preventDefault(); if (!newFileName.trim()) return;
     try {
       const res = await api.post(`/projects/${id}/files`, { name: newFileName.trim(), content: "// New file\n" });
-      setFiles(prev => [...prev, res.data]); setActiveFile(res.data); setCode(res.data.content); setNewFileName("");
+      setFiles(prev => [...prev, res.data]); activeFileRef.current = res.data; setActiveFile(res.data); setCode(res.data.content); setNewFileName("");
     } catch (err) { console.error("Failed to create file:", err); }
   };
 
   const handleSaveFile = async () => {
     if (!activeFile) return;
     setIsSaving(true);
-    try { await api.put(`/projects/${id}/files/${activeFile.id}`, { content: code }); setIsSaving(false); }
-    catch (err) { setIsSaving(false); }
+    try {
+      const response = await api.put(`/projects/${id}/files/${activeFile.id}`, { content: code });
+      const savedFile = response.data.file;
+      activeFileRef.current = savedFile;
+      setActiveFile(savedFile);
+      setFiles((prev) => prev.map((file) => file.id === savedFile.id ? savedFile : file));
+      socket?.emit("file_updated", { projectId: id, file: savedFile });
+    } catch (error) {
+      console.error("Failed to save file:", error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleRunCode = async () => {
@@ -600,7 +626,9 @@ export default function Workspace() {
       }
       socket.emit("send_message", { projectId: id, userId: auth.user.id, userName: auth.user.name, content: chatInput, attachment: attachmentData });
       setChatInput(""); setChatAttachment(null);
-    } catch (err) { }
+    } catch (error) {
+      console.error("Failed to send chat message:", error);
+    }
   };
 
   const handleAddMilestone = async (e: React.FormEvent) => {

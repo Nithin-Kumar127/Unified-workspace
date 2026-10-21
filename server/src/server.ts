@@ -62,10 +62,18 @@ app.get('/api/health', (req: Request, res: Response) => {
 
 // HTTP & Socket.IO Setup
 const server = http.createServer(app);
+const socketClientOrigins = [
+  'http://localhost:5173',
+  ...(process.env.CLIENT_URL ?? 'https://unified-workspace-one.vercel.app')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: [...new Set(socketClientOrigins)],
+    methods: ['GET', 'POST'],
+    credentials: true,
   }
 });
 
@@ -76,6 +84,10 @@ io.on('connection', (socket) => {
   socket.on('join_project', (projectId) => {
     socket.join(projectId.toString());
     console.log(`User joined project: ${projectId}`);
+  });
+
+  socket.on('file_updated', (payload: { projectId: string; file: Record<string, unknown> }) => {
+    socket.to(payload.projectId.toString()).emit('file_updated', payload.file);
   });
 
   // 2. Team Chat Broadcast & DB Insert (WITH ATTACHMENTS)
