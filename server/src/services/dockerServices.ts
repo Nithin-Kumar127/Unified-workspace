@@ -1,66 +1,72 @@
-import { spawn } from 'child_process';
+const PISTON_EXECUTE_URL = 'https://emkc.org/api/v2/piston/execute';
+const EXECUTION_TIMEOUT_MS = 10_000;
 
-export const executeCode = (code: string, language: string): Promise<string> => {
-  return new Promise((resolve) => {
-    let image = '';
-    let command = '';
+interface PistonExecutionResponse {
+  run?: {
+    stdout?: string;
+    stderr?: string;
+    code?: number | null;
+  };
+}
 
-    if (language === 'javascript') {
-      image = 'node:18-alpine';
-      command = 'node';
-    } else if (language === 'python') {
-      image = 'python:3.9-alpine';
-      command = 'python';
-    } else {
-      return resolve('Error: Unsupported language selected.');
+export class ExecutionServiceError extends Error {
+  constructor(message: string, public readonly statusCode: number) {
+    super(message);
+    this.name = 'ExecutionServiceError';
+  }
+}
+
+export const executeCode = async (
+  code: string,
+  language: string,
+  stdin = ''
+): Promise<string> => {
+  if (language !== 'javascript' && language !== 'python') {
+    throw new ExecutionServiceError('Unsupported language selected.', 400);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), EXECUTION_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(PISTON_EXECUTE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language,
+        version: '*',
+        files: [{ content: code }],
+        stdin,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new ExecutionServiceError(
+        `Code execution service returned HTTP ${response.status}.`,
+        502
+      );
     }
 
-    // Windows compatibility adjustment for command execution
-    const isWindows = process.platform === 'win32';
-    const dockerCmd = isWindows ? 'docker.exe' : 'docker';
+    const result = await response.json() as PistonExecutionResponse;
+    if (!result.run) {
+      throw new ExecutionServiceError('Code execution service returned an invalid response.', 502);
+    }
 
-    const dockerArgs = [
-      'run',
-      '--rm',
-      '-i',
-      '--network', 'none',
-      '--memory=128m',
-      image,
-      command,
-      '-'
-    ];
+    const stdout = result.run.stdout ?? '';
+    const stderr = result.run.stderr ?? '';
+    if (result.run.code !== 0 || stderr) {
+      return `Execution Output / Error:\n${stderr || stdout || 'Process exited with non-zero code'}`;
+    }
 
-    const child = spawn(dockerCmd, dockerArgs);
-    let output = '';
-    let errorOutput = '';
-
-    child.stdin.write(code);
-    child.stdin.end();
-
-    child.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    child.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
-
-    child.on('error', (err) => {
-      resolve(`Docker Execution Error: Docker CLI is unavailable to the server process. Install it or add it to PATH. Details: ${err.message}`);
-    });
-
-    child.on('close', (exitCode) => {
-      if (exitCode !== 0 || errorOutput) {
-        resolve(`Execution Output / Error:\n${errorOutput || output || 'Process exited with non-zero code'}`);
-      } else {
-        resolve(output || 'Process executed successfully with no output.');
-      }
-    });
-
-    // 5-second timeout safeguard
-    setTimeout(() => {
-      child.kill();
-      resolve('Error: Code execution timed out (5s limit exceeded).');
-    }, 5000);
-  });
+    return stdout || 'Process executed successfully with no output.';
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new ExecutionServiceError('Code execution timed out (10s limit exceeded).', 504);
+    }
+    if (error instanceof ExecutionServiceError) throw error;
+    throw new ExecutionServiceError('Could not reach the code execution service.', 502);
+  } finally {
+    clearTimeout(timeout);
+  }
 };
