@@ -1,56 +1,58 @@
 import { type Response } from 'express';
 import { type AuthRequest } from '../middleware/authMiddleware.js';
+import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 export const runCode = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { code, language, stdin } = req.body;
+    const { code, language } = req.body;
 
     if (typeof code !== 'string' || !code.trim()) {
       res.status(400).json({ error: 'No code provided' });
       return;
     }
 
-    if (stdin !== undefined && typeof stdin !== 'string') {
-      res.status(400).json({ error: 'stdin must be a string' });
+    // Restrict to JavaScript since we are running natively on a Node server
+    const targetLang = language.toLowerCase();
+    if (targetLang !== 'javascript' && targetLang !== 'node') {
+      res.status(400).json({ 
+        error: 'Execution API restricted. Currently, only JavaScript is supported natively for this demonstration.' 
+      });
       return;
     }
 
-    // Standardize language names and map versions for the Piston API
-    const langConfig: Record<string, string> = {
-      javascript: '18.15.0',
-      python: '3.10.0',
-      cpp: '10.2.0',
-      c: '10.2.0',
-      java: '15.0.2'
-    };
+    // Create a temporary file in the OS temp directory
+    const tmpDir = os.tmpdir();
+    const fileName = `exec-${Date.now()}-${Math.random().toString(36).substring(7)}.js`;
+    const filePath = path.join(tmpDir, fileName);
 
-    const targetLang = language.toLowerCase() === 'node' ? 'javascript' : language.toLowerCase();
-    const version = langConfig[targetLang] || '*';
+    fs.writeFileSync(filePath, code);
 
-    // Send code to the remote execution engine to bypass Render's Docker restriction
-    const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        language: targetLang,
-        version: version,
-        files: [{ content: code }],
-        stdin: stdin || '',
-      }),
+    // Execute the temporary file using the server's own Node runtime (5-second timeout)
+    exec(`node ${filePath}`, { timeout: 5000 }, (error, stdout, stderr) => {
+      // Clean up the temporary file immediately after execution
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+
+      if (error) {
+        if (error.killed) {
+          res.json({ output: 'Error: Execution timed out (5-second limit).' });
+        } else {
+          // Return the actual runtime error (e.g., syntax errors) to the user console
+          res.json({ output: stderr || error.message });
+        }
+        return;
+      }
+
+      // Return successful execution output
+      res.json({ output: stdout || stderr });
     });
-
-    const data = await response.json();
-
-    if (data.message) {
-      res.status(400).json({ error: data.message });
-      return;
-    }
-
-    // Return the executed output back to your frontend
-    res.json({ output: data.run.output });
 
   } catch (error) {
     console.error('Execution Error:', error);
-    res.status(500).json({ error: 'Failed to execute code. Execution engine unavailable.' });
+    res.status(500).json({ error: 'Failed to execute code natively on the server.' });
   }
 };
