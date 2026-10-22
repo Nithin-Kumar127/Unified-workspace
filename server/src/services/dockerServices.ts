@@ -1,6 +1,9 @@
 const RAPIDAPI_HOST = 'judge0-ce.p.rapidapi.com';
 const PUBLIC_HOST = 'ce.judge0.com';
 const EXECUTION_TIMEOUT_MS = 15_000;
+const CPU_TIME_LIMIT_SECONDS = 2;
+const CPU_EXTRA_TIME_SECONDS = 1;
+const WALL_TIME_LIMIT_SECONDS = 5;
 
 const LANGUAGE_IDS: Record<string, number> = {
   javascript: 63, // Node.js
@@ -55,6 +58,9 @@ export const executeCode = async (
         language_id: languageId,
         source_code: code,
         stdin,
+        cpu_time_limit: CPU_TIME_LIMIT_SECONDS,
+        cpu_extra_time: CPU_EXTRA_TIME_SECONDS,
+        wall_time_limit: WALL_TIME_LIMIT_SECONDS,
       }),
       signal: controller.signal,
     });
@@ -74,7 +80,7 @@ export const executeCode = async (
     const statusId = result.status.id;
 
     if (statusId === 5) {
-      return 'Execution Output / Error:\nTime limit exceeded.';
+      return 'Execution Output / Error:\nTime limit exceeded. Execution was stopped to prevent it from running indefinitely.';
     }
 
     if (statusId === 3) {
