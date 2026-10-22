@@ -31,7 +31,7 @@ export const runCode = async (req: AuthRequest, res: Response): Promise<void> =>
     fs.writeFileSync(filePath, code);
 
     // Execute the temporary file using the server's own Node runtime (5-second timeout)
-    exec(`node ${filePath}`, { timeout: 5000 }, (error, stdout, stderr) => {
+    exec(`node ${filePath}`, { timeout: 15000 }, (error, stdout, stderr) => {
       // Clean up the temporary file immediately after execution
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
